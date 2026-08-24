@@ -1,10 +1,29 @@
 name: 'Tests: pretest/posttest'
 
-on: [pull_request, push]
+# Upstream calls the reusable workflow ljharb/actions/.github/workflows/pretest.yml,
+# whose single `uses:` job cannot declare `timeout-minutes` and therefore cannot be
+# dispatched on the seal fork. The job below runs upstream's own `pretest` script.
+# `posttest` (`npx npm@'>=10.2' audit --production`) is not carried over: it is an
+# advisory-database query against the live registry, not a test.
+on:
+  workflow_dispatch: {}
 
 permissions:
   contents: read
 
 jobs:
-  tests:
-    uses: ljharb/actions/.github/workflows/pretest.yml@main
+  pretest:
+    name: 'pretest (lint)'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Pin the npm registry to the release date
+        run: npm config set registry 'https://:2025-07-18T22%3A54%3A20.578Z@time-machines-npm.sealsecurity.io/'
+      - name: Install dependencies
+        run: npm install
+      - name: pretest
+        run: npm run pretest

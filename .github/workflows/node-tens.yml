@@ -1,14 +1,66 @@
 name: 'Tests: node.js >= 10'
 
-on: [pull_request, push]
+# Upstream calls the reusable workflow ljharb/actions/.github/workflows/node.yml,
+# whose single `uses:` job cannot declare `timeout-minutes` (invalid for a
+# reusable-workflow job) and therefore cannot be dispatched on the seal fork.
+# The job below runs upstream's own command, `npm run ci-test`, unchanged.
+on:
+  workflow_dispatch:
+    inputs:
+      test-filter:
+        description: 'Optional space-separated test file names under test/integration/ to run instead of the full suite'
+        required: false
+        default: ''
 
 permissions:
   contents: read
 
 jobs:
   tests:
-    uses: ljharb/actions/.github/workflows/node.yml@main
-    with:
-      range: '>= 10'
-      type: minors
-      command: npm run ci-test
+    name: 'node ${{ matrix.node-version }}'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['24', '22', '20', '18', '16', '14']
+    env:
+      # obake drives the browser suite through PhantomJS 2.1.1, which aborts at
+      # startup against OpenSSL 3 ("could not load the shared library
+      # libproviders.so") unless the system openssl.cnf is bypassed.
+      OPENSSL_CONF: /dev/null
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Pin the npm registry to the release date
+        run: npm config set registry 'https://:2025-07-18T22%3A54%3A20.578Z@time-machines-npm.sealsecurity.io/'
+      - name: Install dependencies
+        run: npm install
+      - name: Tests
+        run: |
+          if [ -n "${{ inputs.test-filter }}" ]; then
+            for t in ${{ inputs.test-filter }}; do node "test/integration/$t"; done
+          else
+            npm run ci-test
+          fi
+
+  pack:
+    name: 'pack the release tarball'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.4.0'
+      - name: Match the npm that packed the published tarball
+        run: npm i -g npm@11.4.2
+      - name: Pack
+        run: npm pack --ignore-scripts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-tarball
+          path: form-data-*.tgz
+          if-no-files-found: error

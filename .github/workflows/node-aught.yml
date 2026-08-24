@@ -1,14 +1,33 @@
 name: 'Tests: node.js < 10'
 
-on: [pull_request, push]
+# Upstream calls the reusable workflow ljharb/actions/.github/workflows/node.yml,
+# whose single `uses:` job cannot declare `timeout-minutes` and therefore cannot be
+# dispatched on the seal fork.
+on:
+  workflow_dispatch: {}
 
 permissions:
   contents: read
 
 jobs:
   tests:
-    uses: ljharb/actions/.github/workflows/node.yml@main
-    with:
-      range: '>= 0.12 < 10'
-      type: minors
-      command: npm run ci-test
+    name: 'node 0.12'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Pin the npm registry to the release date
+        run: npm config set registry 'https://:2025-07-18T22%3A54%3A20.578Z@time-machines-npm.sealsecurity.io/'
+      - name: Install dependencies with a modern npm
+        run: npm install
+      - name: Install node 0.12
+        run: |
+          curl -fsSL https://nodejs.org/dist/v0.12.18/node-v0.12.18-linux-x64.tar.gz -o /tmp/node012.tar.gz
+          mkdir -p /opt/node012
+          tar -xzf /tmp/node012.tar.gz -C /opt/node012 --strip-components=1
+          /opt/node012/bin/node --version
+      - name: Tests on node 0.12
+        run: /opt/node012/bin/node test/run.js
